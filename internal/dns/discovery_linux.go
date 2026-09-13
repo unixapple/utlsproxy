@@ -70,11 +70,6 @@ type resolvedDomain struct {
 	Name      string
 	RouteOnly bool
 }
-type resolvedLink struct {
-	Index int32
-	Name  string
-	Path  dbus.ObjectPath
-}
 
 func linkGroup(props map[string]dbus.Variant, index int) (Group, error) {
 	g := Group{Interface: index}
@@ -121,8 +116,14 @@ func linkGroup(props map[string]dbus.Variant, index int) (Group, error) {
 	return g, nil
 }
 func resolved(ctx context.Context, c *dbus.Conn) (Discovery, error) {
+	return resolvedDiscovery(ctx, func(path dbus.ObjectPath) dbus.BusObject {
+		return c.Object("org.freedesktop.resolve1", path)
+	}, net.Interfaces)
+}
+
+func resolvedDiscovery(ctx context.Context, object func(dbus.ObjectPath) dbus.BusObject, interfaces func() ([]net.Interface, error)) (Discovery, error) {
 	d := Discovery{Source: "org.freedesktop.resolve1", Routing: "domain-aware"}
-	o := c.Object("org.freedesktop.resolve1", "/org/freedesktop/resolve1")
+	o := object("/org/freedesktop/resolve1")
 	p, err := properties(ctx, o, "org.freedesktop.resolve1.Manager")
 	if err != nil {
 		return d, err
@@ -137,14 +138,27 @@ func resolved(ctx context.Context, c *dbus.Conn) (Discovery, error) {
 	if len(g.Servers) > 0 || len(g.Domains) > 0 {
 		d.Groups = append(d.Groups, g)
 	}
-	var links []resolvedLink
-	if err = o.CallWithContext(ctx, "org.freedesktop.resolve1.Manager.ListLinks", 0).Store(&links); err != nil {
-		return d, err
+	// resolve1 has GetLink, but no ListLinks (that belongs to network1).
+	// Enumerate kernel interfaces so links with routing domains but no DNS
+	// servers are retained, too.
+	links, err := interfaces()
+	if err != nil {
+		return d, fmt.Errorf("enumerate DNS interfaces: %w", err)
 	}
 	for _, l := range links {
-		p, e := properties(ctx, c.Object("org.freedesktop.resolve1", l.Path), "org.freedesktop.resolve1.Link")
+		var path dbus.ObjectPath
+		e := o.CallWithContext(ctx, "org.freedesktop.resolve1.Manager.GetLink", 0, int32(l.Index)).Store(&path)
 		if e != nil {
-			return d, e
+			var busErr dbus.Error
+			if errors.As(e, &busErr) && busErr.Name == "org.freedesktop.resolve1.NoSuchLink" {
+				// The interface may have disappeared or may not be tracked by resolved.
+				continue
+			}
+			return d, fmt.Errorf("get DNS link %s: %w", l.Name, e)
+		}
+		p, e := properties(ctx, object(path), "org.freedesktop.resolve1.Link")
+		if e != nil {
+			return d, fmt.Errorf("read DNS link %s: %w", l.Name, e)
 		}
 		g, e := linkGroup(p, int(l.Index))
 		if e != nil {

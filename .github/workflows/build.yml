@@ -1,0 +1,54 @@
+name: Build binaries
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Test with race detector
+        # The race detector needs cgo; the shipped binaries below do not.
+        env:
+          CGO_ENABLED: '1'
+        run: make test
+      - name: Vet without cgo
+        env:
+          CGO_ENABLED: '0'
+        run: make check
+      - name: Test without cgo
+        env:
+          CGO_ENABLED: '0'
+        run: go test ./...
+      - name: Build portable archives
+        env:
+          CGO_ENABLED: '0'
+        run: make release VERSION="0.1.0-dev.${GITHUB_SHA:0:12}"
+      - name: Verify checksums
+        working-directory: dist
+        run: sha256sum --check SHA256SUMS
+      - name: Upload binaries and checksums
+        uses: actions/upload-artifact@v7
+        with:
+          name: utlsproxy-${{ github.sha }}
+          path: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30

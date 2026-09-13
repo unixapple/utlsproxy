@@ -2,13 +2,17 @@
 
 A Go daemon and CLI for replacing the upstream TLS ClientHello of selected IPv4 HTTPS connections, using [uTLS](https://github.com/refraction-networking/utls). It terminates client TLS using your local CA, opens verified upstream TLS using a versioned profile, and relays the application byte stream without parsing HTTP.
 
-Development release: `0.1.0-dev`. Native macOS testing and public fingerprint checks are recorded in [docs/VALIDATION.md](docs/VALIDATION.md). Linux binaries are cross-built; native Linux and installed-service/reboot validation are still pending.
+Development release: `0.1.0-dev`. Native macOS testing and public fingerprint checks are recorded in [docs/VALIDATION.md](docs/VALIDATION.md). Native Arch Linux DNS, CA trust and client checks are also recorded there; installed-service/reboot validation remains pending.
 
 ## Quickstart
 
 ### 1. Build and try a temporary proxy
 
-Install Go (the project selects Go 1.27.1), Git and make, then:
+To use a prebuilt binary, open [Actions → Build binaries](https://github.com/unixapple/utlsproxy/actions/workflows/build.yml), choose a successful run for the commit you want, and download its `utlsproxy-<commit>` artifact (GitHub sign-in required). Unzip it, verify `SHA256SUMS` with `sha256sum --check SHA256SUMS` on Linux or `shasum -a 256 --check SHA256SUMS` on macOS, then extract the `.tar.gz` matching your OS and CPU. `amd64` is for Intel/AMD 64-bit machines; `arm64` is for ARM64, including Apple Silicon. The archives include the executable, documentation and examples. No Go installation or C runtime installation is needed for Linux binaries; macOS binaries use the OS's system libraries. Artifacts are retained for 30 days.
+
+Run `./utlsproxy test` from the extracted directory. In the commands below, replace `./bin/utlsproxy` with `./utlsproxy` when using an archive.
+
+To build from source, install Go 1.26 or later, Git and make, then:
 
 ```sh
 git clone https://github.com/unixapple/utlsproxy.git
@@ -28,7 +32,7 @@ sudo ./bin/utlsproxy config init
 sudo ./bin/utlsproxy ca init
 ```
 
-Edit the generated configuration if needed. Defaults are `127.0.0.1:443`, the exact domain `tls.peet.ws`, profile `chrome-133`, and automatic DNS. Config path: `/etc/utlsproxy/config.json` on Linux, `/Library/Application Support/utlsproxy/config.json` on macOS. Add every exact hostname you want to proxy to `domains`; `google.com` and `www.google.com` are separate entries.
+Edit the generated configuration if needed. Defaults are `127.0.0.1:443`, the exact domain `tls.peet.ws`, profile `chrome-133`, compatible ALPN, and automatic DNS. Config path: `/etc/utlsproxy/config.json` on Linux, `/Library/Application Support/utlsproxy/config.json` on macOS. Add every exact hostname you want to proxy to `domains`; `google.com` and `www.google.com` are separate entries.
 
 ```sh
 sudo ./bin/utlsproxy config validate
@@ -102,7 +106,13 @@ make check                 # go vet
 make release               # four platform archives plus dist/SHA256SUMS
 ```
 
-The module pins its dependencies and selects Go `1.27.1` through `go.mod`/the Makefile. A Go installation supporting automatic toolchain download can fetch it; otherwise install that toolchain first. Source currently requires Go 1.26 or later. macOS/Linux `arm64` and `amd64` builds use `CGO_ENABLED=0` in release packaging. Release archives include documentation, configuration examples and dependency license notices; they do not contain private keys. No code signing, notarization, package-manager integration, or automatic updates are provided.
+The module pins its dependencies and suggests Go `1.27.1` through `go.mod`; source requires Go 1.26 or later. Make and the release script respect your Go toolchain configuration. With `GOTOOLCHAIN=auto`, Go can download the suggested toolchain if your installed version is older. To use only your installed compiler, run `make GOTOOLCHAIN=local build` (or `make GOTOOLCHAIN=local release`). To explicitly select the standard toolchain, use `make GOTOOLCHAIN=go1.27.1 build`.
+
+Both `make build` and release packaging use `CGO_ENABLED=0`; shipped binaries require no C compiler, and Linux binaries have no dynamic libc dependency. Race-detector tests need cgo and a C compiler on the development/CI host.
+
+The [build workflow](.github/workflows/build.yml) runs on every push and on manual dispatch, tests the code, then uploads four macOS/Linux `arm64` and `amd64` archives plus SHA-256 checksums. CI installs the suggested Go version with `setup-go` and uses `GOTOOLCHAIN=local` for subsequent commands. CI archive versions include the commit ID.
+
+Release archives include documentation, configuration examples and dependency license notices; they do not contain private keys. Arch's packaged Go license is detected automatically; for other custom toolchain layouts, set `GO_LICENSE=/path/to/LICENSE` when packaging. No code signing, notarization, package-manager integration, or automatic updates are provided.
 
 ## Foreground daemon and inspection
 
@@ -127,13 +137,13 @@ curl -4 --noproxy '*' --http2 --cacert .local/ca/ca.crt \
   --connect-to tls.peet.ws:443:127.0.0.1:8443 https://tls.peet.ws/api/all
 ```
 
-`--connect-to` changes only curl's TCP destination; SNI and the URL stay `tls.peet.ws`. There is no hosts override or global CA trust involved. curl needs HTTP/2 support for this example. For an HTTP/1-only client, run `serve` with `--alpn-mode compatible` and omit `--http2`.
+`--connect-to` changes only curl's TCP destination; SNI and the URL stay `tls.peet.ws`. There is no hosts override or global CA trust involved. curl needs HTTP/2 support for this example. For an HTTP/1-only client, omit `--http2`; the default compatible mode handles its protocol offer.
 
 Edit the JSON, then use `reload --config .local/config.json`. Domains, profile, ALPN policy, DNS, access rules, limits and log level reload for new connections. Listener, upstream port, CA/runtime paths and log format require restart. Explicit `serve` flags remain in effect across reloads. Existing streams retain their original configuration.
 
 ## Configuration and TLS profiles
 
-`config init` without `--local` emits the platform's service paths and a port-443 listener. JSON is strict: unknown/duplicate fields and invalid values are rejected. Defaults fill omitted fields; relative JSON paths resolve against the config file. See [the full configuration contract](SPEC.md#6-configuration-contract).
+`config init` without `--local` emits the platform's service paths and a port-443 listener. JSON is strict: unknown/duplicate fields and invalid values are rejected. New configurations and omitted `upstream.alpn_mode` use `compatible`; existing explicit `strict` settings remain strict. Defaults fill omitted fields; relative JSON paths resolve against the config file. See [the full configuration contract](SPEC.md#6-configuration-contract).
 
 | Example | Purpose |
 | --- | --- |
@@ -152,7 +162,7 @@ Edit the JSON, then use `reload --config .local/config.json`. Domains, profile, 
 | `chrome-133` (default) | `HelloChrome_133` | Shuffled extensions/GREASE mean JA3 can vary. Nonempty upstream ALPS settings are rejected as `unsupported_alps`; use Firefox for such origins. |
 | `firefox-120` | `HelloFirefox_120` | No Chrome ALPS requirement; this is a TLS profile, not a complete Firefox implementation. |
 
-`strict` preserves the profile's advertised ALPN, then rejects a selection the client cannot use. `compatible` restricts ALPN to the client's protocols and adjusts dependent ALPS extensions, reporting changes in connection metadata. Both TLS legs must agree on the application protocol. No HTTP/1-to-HTTP/2 translation is performed. Upstream certificate and hostname verification cannot be disabled.
+`compatible` (default) restricts ALPN to the client's protocols and adjusts dependent ALPS extensions, reporting changes in connection metadata. For clients that send no ALPN, including some HTTP/1.1 WebSocket transports, it omits upstream ALPN too. This can change the TLS fingerprint. Choose `strict` explicitly to preserve the profile's advertised ALPN; it rejects a selection the client cannot use, such as upstream `h2` when the client offered no ALPN. Both TLS legs must agree on the application protocol. No HTTP/1-to-HTTP/2 translation is performed. Upstream certificate and hostname verification cannot be disabled.
 
 DNS `auto` reads macOS resolver groups via `scutil --dns`, or Linux systemd-resolved global/per-link configuration via D-Bus. Ordinary direct `/etc/resolv.conf` is supported on Linux as default-only DNS. Actual lookups use direct A queries, not the system hostname resolver or hosts file. Domain routing and interface scope are retained; auto mode rejects opaque local DNS stubs and unsupported mandatory DNS-over-TLS. Supply explicit servers if discovery cannot expose a usable IPv4 upstream. Discovery refreshes as network configuration changes, with no hidden public-DNS fallback. On Linux, interface-bound DNS can require root/capabilities even with a high TCP port.
 
@@ -209,11 +219,14 @@ The brackets above denote optional arguments. Trust management reads only the pu
 | macOS | Imports the exact CA into `/Library/Keychains/System.keychain` and adds **SSL-only** trust in the admin domain using `/usr/bin/security`. |
 | Debian/Ubuntu family | Adds a fingerprint-named `.crt` under `/usr/local/share/ca-certificates`, then runs `/usr/sbin/update-ca-certificates`. This grants system CA trust, **not SSL-only trust**. |
 | Fedora/RHEL family | Adds a fingerprint-named `.crt` under `/etc/pki/ca-trust/source/anchors`, then runs `/usr/bin/update-ca-trust extract`. This grants system CA trust, **not SSL-only trust**. |
+| Arch Linux family | Adds a fingerprint-named `.crt` under `/etc/ca-certificates/trust-source/anchors`, then runs `/usr/bin/update-ca-trust extract`. Checks trust in `/etc/ca-certificates/extracted/tls-ca-bundle.pem`. This grants system CA trust, **not SSL-only trust**. |
 | Other Linux distributions | Refuses automatic changes and requests manual import. |
 
-Install the distribution's `ca-certificates` package first. Platform integration follows the [Debian update-ca-certificates contract](https://manpages.debian.org/bookworm/ca-certificates/update-ca-certificates.8.en.html) and [RHEL shared trust-store guidance](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/securing_networks/using-shared-system-certificates_securing-networks).
+Install the distribution's `ca-certificates` package first. Platform integration follows the [Debian update-ca-certificates contract](https://manpages.debian.org/bookworm/ca-certificates/update-ca-certificates.8.en.html), [RHEL shared trust-store guidance](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/securing_networks/using-shared-system-certificates_securing-networks), and [Arch update-ca-trust contract](https://man.archlinux.org/man/update-ca-trust.8).
 
 `trust-status` checks the exact fingerprint: macOS uses local native SSL certificate evaluation; Linux checks the generated system TLS CA bundle. It returns exit code 5 when not trusted. A readable public certificate permits unprivileged status checks; receipt ownership may be reported unknown unless run with sudo. On macOS, user-specific trust overrides can make evaluation differ between users. This is a system-store check, not proof of trust in every application.
+
+On Linux, Chrome/Chromium may still report `NET::ERR_CERT_AUTHORITY_INVALID` after system trust succeeds. Import the same public CA through `chrome://settings/certificates` and enable trust for identifying websites, then fully quit and reopen the browser. The installed certificate path is shown by `ca trust-status --json` under `store.target`. Chromium also supports importing through `certutil` into your user's NSS database with trust flags `C,,` (SSL server CA trust). Chromium 146 and later default to `~/.local/share/pki/nssdb`, but continue using `~/.pki/nssdb` if it already exists; run browser imports as your normal user. See [Chromium's Linux certificate management documentation](https://chromium.googlesource.com/chromium/src/+/master/docs/linux/cert_management.md). Browser imports are separate from CLI-managed system trust; remove them separately in the browser when removing this CA.
 
 Trust commands are explicit opt-in administrative actions. `ca init`, `serve`, `test`, `install-service` and `uninstall-service` never automatically install or remove system trust. `--dry-run` performs inspection only. Repeating a successful installation does not rewrite trust. A certificate already installed manually is **not adopted**: if already trusted, installation is a no-op; if installed but untrusted, the command requests manual correction. `ca untrust` refuses to remove unmanaged certificates, even if their display name matches.
 
@@ -221,7 +234,7 @@ Ownership receipts and public recovery snapshots are stored by SHA-256 in `/etc/
 
 For manual macOS import, open Keychain Access, select **System**, import `ca.crt`, then find it under **Certificates** and enable SSL trust in its **Trust** settings. [Apple's import instructions](https://support.apple.com/guide/keychain-access/add-certificates-to-a-keychain-kyca2431/mac), [trust settings](https://support.apple.com/en-gb/guide/keychain-access/kyca11871/mac).
 
-Trust lifecycle tests use fake native commands and isolated fixture directories, covering install/repeat/status/remove, partial failure recovery, exact-fingerprint conflicts and private-key independence. Read-only native macOS inspection has been exercised; actual native trust mutation and Linux trust-store rebuilds have not been executed on this development machine.
+Trust lifecycle tests use fake native commands and isolated fixture directories, covering install/repeat/status/remove, partial failure recovery, exact-fingerprint conflicts and private-key independence. Read-only native macOS inspection and native Arch Linux installed-CA checks have been exercised. On Arch, the served certificate verified against the system bundle; Chromium required a separate NSS import and restart. See [validation details](docs/VALIDATION.md).
 
 ## Scope and limits
 
@@ -230,7 +243,7 @@ Trust lifecycle tests use fake native commands and isolated fixture directories,
 - Requires visible, allowed SNI and an ECDSA-capable TLS 1.2/1.3 client. Real ECH, certificate pinning and forwarding client-certificate authentication are not supported.
 - No HTTP parsing/rewriting, HTTP/2 fingerprint spoofing, upstream pooling, session resumption or 0-RTT. Plaintext exists transiently in memory but is not logged.
 - Exact domain names only; not an open proxy. LAN exposure requires an explicit client CIDR allowlist. One upstream is selected by the initial SNI; the daemon cannot enforce HTTP Host/:authority inside that stream.
-- This is a development build. Native service installation/reboot, Linux runtime, LAN browser routing and long-duration resource measurements remain to be validated before unattended production use.
+- This is a development build. Native service installation/reboot, broader Linux distribution coverage, LAN browser routing and long-duration resource measurements remain to be validated before unattended production use.
 
 See [SPEC.md](SPEC.md) for the formal requirements, [DELIVERY.md](DELIVERY.md) for command shapes, and [docs/VALIDATION.md](docs/VALIDATION.md) for the actual verification boundary. `COMMAND --help` lists flags; exit codes are 0 success, 1 operation failure, 2 invalid input, 3 unavailable control/service, 4 permission denied, and 5 running but degraded.
 

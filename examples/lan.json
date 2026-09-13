@@ -2,7 +2,7 @@
   "version": 1,
   "listen": ["192.168.1.10:443"],
   "domains": ["google.com", "www.google.com", "tls.peet.ws"],
-  "upstream": {"profile": "firefox-120", "alpn_mode": "strict"},
+  "upstream": {"profile": "firefox-120", "alpn_mode": "compatible"},
   "dns": {"mode": "auto"},
   "hosts": {"address": "192.168.1.10"},
   "access": {"client_cidrs": ["192.168.1.0/24"]}

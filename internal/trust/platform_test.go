@@ -82,6 +82,8 @@ func TestLinuxDistributionDetection(t *testing.T) {
 		{"ID=debian", "debian-ca-certificates", "/usr/sbin/update-ca-certificates"},
 		{"ID=rocky\nID_LIKE=\"rhel centos fedora\"", "fedora-ca-trust", "/usr/bin/update-ca-trust"},
 		{"ID=custom\nID_LIKE=\"fedora\"", "fedora-ca-trust", "/usr/bin/update-ca-trust"},
+		{"ID=arch", "arch-ca-trust", "/usr/bin/update-ca-trust"},
+		{"ID=manjaro\nID_LIKE=\"arch\"", "arch-ca-trust", "/usr/bin/update-ca-trust"},
 	} {
 		b, err := linuxStore(tc.release, nil)
 		if err != nil || b.kind != tc.kind || b.tool != tc.tool {
@@ -94,7 +96,7 @@ func TestLinuxDistributionDetection(t *testing.T) {
 }
 
 func TestLinuxTrustLifecycleAndConflict(t *testing.T) {
-	for _, release := range []string{"ID=debian", "ID=fedora"} {
+	for _, release := range []string{"ID=debian", "ID=fedora", "ID=arch"} {
 		t.Run(release, func(t *testing.T) {
 			m, _, path := fixture(t)
 			c, _ := Load(path)

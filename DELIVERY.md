@@ -12,10 +12,10 @@ Detailed requirements: [Project specification](SPEC.md)
 | --- | --- |
 | Go project | Module `github.com/unixapple/utlsproxy`, BSD 3-Clause license, pinned dependencies, source, meaningful automated tests, and build instructions. |
 | One executable | `utlsproxy` contains the daemon, CLI, CA generator, hosts manager, and native service installer. No separate control daemon or web UI. |
-| Platform artifacts | macOS/Linux builds for `arm64` and `amd64`, archive packages, and SHA-256 checksums. |
+| Platform artifacts | macOS/Linux builds for `arm64` and `amd64`, cgo-free archive packages and SHA-256 checksums, uploaded by GitHub Actions on each push. |
 | Configuration | Versioned JSON, a starter-config command, loopback/LAN examples, automatic/manual DNS examples, and validation. |
 | Native services | macOS LaunchDaemon and Linux systemd integration, installed by the CLI. Boot startup, process restart, lifecycle commands, and uninstall. |
-| CA trust | Explicit trust/status/untrust commands for macOS and Debian/Ubuntu/Fedora/RHEL-family Linux, with exact ownership receipts and manual fallback. |
+| CA trust | Explicit trust/status/untrust commands for macOS and Debian/Ubuntu/Fedora/RHEL/Arch-family Linux, with exact ownership receipts and manual fallback. |
 | Documentation | Quickstart, explicit/manual CA trust guidance, command reference, recovery instructions, supported profile matrix, and platform/browser validation results. |
 
 The executable is called `utlsproxy`; the Go module uses the repository path `github.com/unixapple/utlsproxy`. The workspace directory does not need to be renamed.
@@ -74,7 +74,7 @@ The commands above are implemented. `config init --local --output PATH` also cre
 - CA generation writes a public `ca.crt` and a protected private `ca.key`, refuses overwrite, and prints identifying information. The user explicitly invokes `ca trust` on each client or imports manually. CA generation, daemon/service lifecycle and the temporary test do not change system trust. `ca untrust` removes only exact receipt-owned installations.
 - DNS defaults to `auto`: discover the daemon machine's current usable IPv4 DNS servers from macOS resolver configuration or Linux resolver configuration, then query them directly. Refresh discovery as the network changes. An opaque local DNS stub requires explicit manual configuration if its real upstream cannot be discovered. No hidden public-DNS fallback.
 - Named, versioned profiles are selected through CLI or JSON. The default is `chrome-133`; `firefox-120` is also implemented and publicly tested. Chrome origins returning nonempty ALPS settings are explicitly rejected; use Firefox for those origins. Arbitrary custom ClientHello JSON is deferred.
-- ALPN defaults to `strict`, which preserves profile behavior and rejects incompatible clients. `compatible` can adapt advertised protocols and reports the resulting fingerprint-relevant change.
+- ALPN defaults to `compatible`, which adapts advertised protocols for HTTP/1.1, HTTP/2 and no-ALPN clients and reports fingerprint-relevant changes. Explicit `strict` mode preserves the profile offer and rejects incompatible clients.
 - Hosts management is optional and explicit. Only an application-owned block is edited. Service installation does not change hosts entries.
 - A local Unix socket exposes status, active connections, and reload. Inspectable data is connection metadata, counters, DNS selection, and errors; no HTTP content or request logs.
 - macOS service installation uses `local.utlsproxy`; Linux uses `utlsproxy.service`. Services start without user login and restart on failure.
@@ -91,4 +91,4 @@ The commands above are implemented. `config init --local --output PATH` also cre
 
 Completion is judged against [the acceptance criteria](SPEC.md#12-validation-and-acceptance-criteria), including actual upstream fingerprint evidence and native service lifecycle tests. Cross-compiled binaries alone do not establish runtime support, and public-site checks are kept separate from deterministic automated tests.
 
-The implementation, automated tests, local binaries, four-platform release packaging and a repeatable nonpersistent public fingerprint test are provided. Temporary/local CAs were generated for testing but not installed into system trust. No system hosts entries, service registrations, firewall rules or DNS settings were changed. See [the validation record](docs/VALIDATION.md) for passed checks and the remaining native Linux, real hosts/browser/QUIC, reboot/service and soak-test work. This is not yet a production-certified version 1 release.
+The implementation, automated tests, local binaries, four-platform release packaging and a repeatable nonpersistent public fingerprint test are provided. The initial macOS tests used temporary/local CAs without system changes. Subsequent Arch Linux checks exercised installed CA trust and a user-operated foreground daemon; Chromium trust required a separate NSS import and restart. See [the validation record](docs/VALIDATION.md) for passed checks and the remaining Linux distribution coverage, LAN/QUIC, reboot/service and soak-test work. This is not yet a production-certified version 1 release.

@@ -89,7 +89,6 @@ func TestHTTPSRelayAndReload(t *testing.T) {
 			c.Runtime.StateDir = filepath.Join(root, "state")
 			c.Runtime.ControlSocket = filepath.Join(root, "state", "control.sock")
 			c.Runtime.ShutdownTimeout = config.Duration(100 * time.Millisecond)
-			c.Upstream.ALPNMode = "compatible"
 			c.DNS.Mode = "manual"
 			c.DNS.Servers = []string{"192.0.2.1:53"}
 			if _, e = ca.Init(filepath.Join(root, "ca"), "proxy", 24*time.Hour); e != nil {

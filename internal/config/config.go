@@ -91,7 +91,7 @@ func PlatformPaths() Paths {
 func Defaults() Config {
 	p := PlatformPaths()
 	c := Config{Version: 1, Listen: []string{"127.0.0.1:443"}, Domains: []string{"tls.peet.ws"}}
-	c.Upstream.Port, c.Upstream.Profile, c.Upstream.ALPNMode = 443, "chrome-133", "strict"
+	c.Upstream.Port, c.Upstream.Profile, c.Upstream.ALPNMode = 443, "chrome-133", "compatible"
 	c.DNS = DNS{Mode: "auto", Servers: []string{}, RefreshInterval: Duration(30 * time.Second), Timeout: Duration(3 * time.Second), CacheSize: 1024}
 	c.CA.Cert, c.CA.Key = filepath.Join(p.CA, "ca.crt"), filepath.Join(p.CA, "ca.key")
 	c.Hosts.Address = "127.0.0.1"

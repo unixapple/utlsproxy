@@ -53,6 +53,9 @@ func TestLocalSetup(t *testing.T) {
 	if effective.Listen[0] != "127.0.0.1:8443" || !strings.HasPrefix(effective.CA.Cert, dir) {
 		t.Fatalf("non-local setup: %+v", effective)
 	}
+	if effective.Upstream.ALPNMode != "compatible" {
+		t.Fatalf("generated config should accept no-ALPN clients: %s", effective.Upstream.ALPNMode)
+	}
 	run("ca", "init", "--config", path)
 	run("config", "validate", "--config", path)
 	var info map[string]any

@@ -150,6 +150,8 @@ func linuxStore(release string, run runner) (*linuxBackend, error) {
 			b = &linuxBackend{kind: "debian-ca-certificates", dir: "/usr/local/share/ca-certificates", bundle: "/etc/ssl/certs/ca-certificates.crt", tool: "/usr/sbin/update-ca-certificates"}
 		case "fedora", "rhel", "centos", "rocky", "almalinux":
 			b = &linuxBackend{kind: "fedora-ca-trust", dir: "/etc/pki/ca-trust/source/anchors", bundle: "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", tool: "/usr/bin/update-ca-trust", args: []string{"extract"}}
+		case "arch":
+			b = &linuxBackend{kind: "arch-ca-trust", dir: "/etc/ca-certificates/trust-source/anchors", bundle: "/etc/ca-certificates/extracted/tls-ca-bundle.pem", tool: "/usr/bin/update-ca-trust", args: []string{"extract"}}
 		}
 		if b != nil {
 			b.run = run
@@ -163,7 +165,7 @@ func linuxStore(release string, run runner) (*linuxBackend, error) {
 			return b, nil
 		}
 	}
-	return nil, errors.New("unsupported Linux trust store; supported: Debian/Ubuntu and Fedora/RHEL families; install ca.crt manually")
+	return nil, errors.New("unsupported Linux trust store; supported: Debian/Ubuntu, Fedora/RHEL and Arch Linux families; install ca.crt manually")
 }
 func (l *linuxBackend) Store(c Certificate) Store {
 	return Store{l.kind, filepath.Join(l.dir, "utlsproxy-"+c.SHA256+".crt"), "system CA trust (not restricted to SSL)"}

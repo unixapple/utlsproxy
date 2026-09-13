@@ -121,10 +121,10 @@ Version 1 uses full upstream handshakes without session resumption or 0-RTT. Pro
 
 | Value | Required behavior |
 | --- | --- |
-| `strict` (default) | Preserve the selected profile's advertised protocols. Finish the upstream handshake first; reject the connection if the negotiated protocol cannot be used by the original client. |
-| `compatible` | Restrict the profile's advertised protocols to those supported by the original client, preserving profile order. Report the effective change because it may alter the observed TLS fingerprint. |
+| `strict` | Preserve the selected profile's advertised protocols. Finish the upstream handshake first; reject the connection if the negotiated protocol cannot be used by the original client. |
+| `compatible` (default) | Restrict the profile's advertised protocols to those supported by the original client, preserving profile order. Report the effective change because it may alter the observed TLS fingerprint. |
 
-On successful connections, both legs MUST agree on application protocol. An upstream result with no ALPN can use HTTPS's HTTP/1.1 default only when the client supports that behavior; the daemon also omits downstream ALPN in that case. A client with no ALPN cannot be given HTTP/2. Empty or incompatible offers produce a clear connection error, never protocol conversion.
+On successful connections, both legs MUST agree on application protocol. An upstream result with no ALPN can use HTTPS's HTTP/1.1 default only when the client supports that behavior; the daemon also omits downstream ALPN in that case. A client with no ALPN cannot be given HTTP/2. In compatible mode, an empty client offer omits upstream ALPN and allows HTTP/1.1 without ALPN. In strict mode, an upstream selection absent from the client offer produces a clear connection error, never protocol conversion.
 
 Go/uTLS configuration fields alone are not sufficient evidence that the wire ClientHello changed. Tests MUST inspect the actual emitted ClientHello. Any ALPN-dependent extensions, including ALPS, must remain internally consistent. A supported profile must pass stream interoperability tests when such extensions are negotiated. Unsupported behavior must produce a documented error or a separately named compatibility profile; `strict` mode MUST NOT silently remove extensions. [ALPN protocol selection](https://www.rfc-editor.org/rfc/rfc7301.html#section-3.2), [uTLS application-settings extensions](https://github.com/refraction-networking/utls/blob/master/u_tls_extensions.go)
 
@@ -214,7 +214,7 @@ Example Linux service configuration; `config init` emits the corresponding macOS
   "upstream": {
     "port": 443,
     "profile": "chrome-133",
-    "alpn_mode": "strict"
+    "alpn_mode": "compatible"
   },
   "dns": {
     "mode": "auto",
@@ -480,7 +480,7 @@ examples/           configuration examples
 docs/               operational guidance and validation reports
 ```
 
-Connection records, counters and health live in `internal/proxy` in the development implementation. Pin the Go toolchain and dependency versions, using a maintained toolchain compatible with the selected uTLS release. Avoid an HTTP reverse-proxy framework and additional background helper services. The system's `scutil`, launchd, and systemd components are platform dependencies, not separately distributed daemons.
+Connection records, counters and health live in `internal/proxy` in the development implementation. Pin dependency versions and suggest a maintained Go toolchain compatible with the selected uTLS release, while respecting the local Go toolchain configuration. Build shipped binaries with CGO_ENABLED=0; CI installs the suggested toolchain and publishes commit-specific archives and checksums on each push. Avoid an HTTP reverse-proxy framework and additional background helper services. The system's `scutil`, launchd, and systemd components are platform dependencies, not separately distributed daemons.
 
 ## 12. Validation and acceptance criteria
 
