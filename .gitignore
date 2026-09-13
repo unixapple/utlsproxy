@@ -1,0 +1,15 @@
+/bin/
+/dist/
+/.local/
+*.test
+coverage.out
+ca.key
+*.key
+*.crt
+*.pem
+*.p12
+*.pfx
+.DS_Store
+.env
+.env.*
+*.log

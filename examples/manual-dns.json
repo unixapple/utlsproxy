@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "listen": ["127.0.0.1:8443"],
+  "domains": ["tls.peet.ws"],
+  "dns": {"mode": "manual", "servers": ["192.0.2.53:53"], "timeout": "3s"},
+  "ca": {"cert": "../.local/ca/ca.crt", "key": "../.local/ca/ca.key"},
+  "runtime": {"state_dir": "../.local/state", "control_socket": "../.local/state/control.sock"}
+}
