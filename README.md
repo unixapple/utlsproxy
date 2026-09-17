@@ -8,7 +8,16 @@ Development release: `0.1.0-dev`. Native macOS testing and public fingerprint ch
 
 ### 1. Build and try a temporary proxy
 
-To use a prebuilt binary, open [Actions → Build binaries](https://github.com/unixapple/utlsproxy/actions/workflows/build.yml), choose a successful run for the commit you want, and download its `utlsproxy-<commit>` artifact (GitHub sign-in required). Unzip it, verify `SHA256SUMS` with `sha256sum --check SHA256SUMS` on Linux or `shasum -a 256 --check SHA256SUMS` on macOS, then extract the `.tar.gz` matching your OS and CPU. `amd64` is for Intel/AMD 64-bit machines; `arm64` is for ARM64, including Apple Silicon. The archives include the executable, documentation and examples. No Go installation or C runtime installation is needed for Linux binaries; macOS binaries use the OS's system libraries. Artifacts are retained for 30 days.
+Download the archive for your machine from [GitHub Releases](https://github.com/unixapple/utlsproxy/releases). Public release downloads do not require GitHub sign-in.
+
+| Platform | CPU | Archive suffix |
+| --- | --- | --- |
+| macOS | Apple Silicon | `darwin-arm64.tar.gz` |
+| macOS | Intel | `darwin-amd64.tar.gz` |
+| Linux | ARM64 | `linux-arm64.tar.gz` |
+| Linux | Intel/AMD 64-bit | `linux-amd64.tar.gz` |
+
+Download `SHA256SUMS` alongside your archive. On Linux, verify the downloaded archive with `sha256sum --check --ignore-missing SHA256SUMS`. On macOS, run `shasum -a 256 utlsproxy-<version>-darwin-<arch>.tar.gz` and compare it with the matching line in `SHA256SUMS`. Extract with `tar -xzf utlsproxy-<version>-<os>-<arch>.tar.gz` in an empty directory. Each archive includes the executable, documentation and examples. No Go installation or C runtime installation is needed for Linux binaries; macOS binaries use the OS's system libraries.
 
 Run `./utlsproxy test` from the extracted directory. In the commands below, replace `./bin/utlsproxy` with `./utlsproxy` when using an archive.
 
@@ -110,7 +119,16 @@ The module pins its dependencies and suggests Go `1.27.1` through `go.mod`; sour
 
 Both `make build` and release packaging use `CGO_ENABLED=0`; shipped binaries require no C compiler, and Linux binaries have no dynamic libc dependency. Race-detector tests need cgo and a C compiler on the development/CI host.
 
-The [build workflow](.github/workflows/build.yml) runs on every push and on manual dispatch, tests the code, then uploads four macOS/Linux `arm64` and `amd64` archives plus SHA-256 checksums. CI installs the suggested Go version with `setup-go` and uses `GOTOOLCHAIN=local` for subsequent commands. CI archive versions include the commit ID.
+The [build workflow](.github/workflows/build.yml) tests the code and builds four macOS/Linux `arm64` and `amd64` archives plus SHA-256 checksums. Branch pushes and manual branch runs upload development artifacts (retained for 30 days) under [Actions → Build binaries](https://github.com/unixapple/utlsproxy/actions/workflows/build.yml). CI installs the suggested Go version with `setup-go` and uses `GOTOOLCHAIN=local` for subsequent commands.
+
+To publish a release, commit and push the changes, then push a version tag pointing to that commit:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+After tests and packaging pass, the workflow creates a GitHub Release with all four archives and `SHA256SUMS` as individual downloadable assets. Archive names and the embedded binary version use the tag without `v`, for example `utlsproxy-0.1.0-linux-amd64.tar.gz`. Tags such as `v0.1.0-rc.1` create prereleases. A release stays in draft until its assets have uploaded; rerunning the workflow retries asset uploads. Only the release job receives repository write permission, using GitHub's built-in token; no additional secret is needed.
 
 Release archives include documentation, configuration examples and dependency license notices; they do not contain private keys. Arch's packaged Go license is detected automatically; for other custom toolchain layouts, set `GO_LICENSE=/path/to/LICENSE` when packaging. No code signing, notarization, package-manager integration, or automatic updates are provided.
 

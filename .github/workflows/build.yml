@@ -2,6 +2,8 @@ name: Build binaries
 
 on:
   push:
+    branches: ["**"]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -35,10 +37,25 @@ jobs:
         env:
           CGO_ENABLED: '0'
         run: go test ./...
+      - name: Select archive version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "Expected a version tag such as v0.1.0 or v0.1.0-rc.1" >&2
+              exit 1
+            fi
+          else
+            version="0.1.0-dev.${GITHUB_SHA:0:12}"
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
       - name: Build portable archives
         env:
           CGO_ENABLED: '0'
-        run: make release VERSION="0.1.0-dev.${GITHUB_SHA:0:12}"
+          RELEASE_VERSION: ${{ steps.version.outputs.value }}
+        run: make release VERSION="$RELEASE_VERSION"
       - name: Verify checksums
         working-directory: dist
         run: sha256sum --check SHA256SUMS
@@ -52,3 +69,40 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: utlsproxy-${{ github.sha }}
+          path: dist
+      - name: Verify release checksums
+        working-directory: dist
+        run: sha256sum --check SHA256SUMS
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          flags=()
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            flags+=(--prerelease)
+          fi
+          # Keep a new release in draft until every asset is uploaded.
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --draft \
+              --title "utlsproxy $RELEASE_TAG" --generate-notes "${flags[@]}"
+          fi
+          gh release upload "$RELEASE_TAG" dist/*.tar.gz dist/SHA256SUMS --clobber
+          gh release edit "$RELEASE_TAG" --draft=false "${flags[@]}"
