@@ -167,6 +167,7 @@ Edit the JSON, then use `reload --config .local/config.json`. Domains, profile, 
 | --- | --- |
 | [examples/local.json](examples/local.json) | Loopback port 8443, automatic DNS, workspace-relative CA/state. |
 | [examples/lan.json](examples/lan.json) | Explicit LAN listener and client subnet; replace example addresses. Uses platform CA/state defaults. |
+| [examples/custom-loopback.json](examples/custom-loopback.json) | Linux custom address on `lo` for clients that reject `127.0.0.1`; includes the required source-IP allowlist. Uses platform CA/state defaults. |
 | [examples/manual-dns.json](examples/manual-dns.json) | Explicit DNS; replace `192.0.2.53` (documentation-only, not a working resolver). |
 
 ```sh
@@ -183,6 +184,41 @@ Edit the JSON, then use `reload --config .local/config.json`. Domains, profile, 
 `compatible` (default) restricts ALPN to the client's protocols and adjusts dependent ALPS extensions, reporting changes in connection metadata. For clients that send no ALPN, including some HTTP/1.1 WebSocket transports, it omits upstream ALPN too. This can change the TLS fingerprint. Choose `strict` explicitly to preserve the profile's advertised ALPN; it rejects a selection the client cannot use, such as upstream `h2` when the client offered no ALPN. Both TLS legs must agree on the application protocol. No HTTP/1-to-HTTP/2 translation is performed. Upstream certificate and hostname verification cannot be disabled.
 
 DNS `auto` reads macOS resolver groups via `scutil --dns`, or Linux systemd-resolved global/per-link configuration via D-Bus. Ordinary direct `/etc/resolv.conf` is supported on Linux as default-only DNS. Actual lookups use direct A queries, not the system hostname resolver or hosts file. Domain routing and interface scope are retained; auto mode rejects opaque local DNS stubs and unsupported mandatory DNS-over-TLS. Supply explicit servers if discovery cannot expose a usable IPv4 upstream. Discovery refreshes as network configuration changes, with no hidden public-DNS fallback. On Linux, interface-bound DNS can require root/capabilities even with a high TCP port.
+
+### Custom loopback address for clients such as OpenClaw
+
+If a client rejects an endpoint because its hostname resolves to `127.0.0.1`, Linux can host utlsproxy on another IPv4 address assigned to `lo`. This example documents the setup used when troubleshooting an OpenClaw endpoint rejection; client address restrictions may vary, so it does not guarantee acceptance by every client.
+
+First assign the address before starting the daemon:
+
+```sh
+sudo ip address add 19.19.19.19/32 dev lo
+```
+
+Use [examples/custom-loopback.json](examples/custom-loopback.json) as a configuration template. For an existing installation, merge its `listen`, `hosts.address`, and `access.client_cidrs` fields into `/etc/utlsproxy/config.json`, keeping your existing CA, runtime paths and working DNS settings. Adjust `domains` to the exact endpoint hostnames you use. The example uses automatic DNS; retain manual DNS if your installation needs it.
+
+The `/32` entry in `access.client_cidrs` is essential: local connections to `19.19.19.19` can also use `19.19.19.19` as their source address. Allowing only `127.0.0.0/8` causes the proxy to reject them with `client_denied`, even though the address is on `lo`.
+
+For an existing systemd installation, validate the configuration, restart to change the listener, and update hosts redirection:
+
+```sh
+sudo utlsproxy config validate
+sudo systemctl restart utlsproxy
+sudo utlsproxy hosts apply --dry-run
+sudo utlsproxy hosts apply
+```
+
+Keep the application's endpoint URL as its original HTTPS hostname (for example, `https://api.openai.com/v1`); hosts redirection sends it to the local proxy while preserving TLS SNI. The client still needs to trust your utlsproxy CA. For a fresh installation, follow the quickstart CA and service setup with this configuration.
+
+If OpenClaw reports `UNABLE_TO_VERIFY_LEAF_SIGNATURE` even after system CA trust is installed, enable Node.js's system CA store. On the tested Debian installation with Node.js 24.15.0, default Node TLS verification failed while `--use-system-ca` successfully verified the proxied `auth.openai.com` certificate:
+
+```sh
+NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--use-system-ca" openclaw models auth login --provider openai
+```
+
+This setting applies to that command and its children. For subsequent OpenClaw commands in the same shell, use `export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--use-system-ca"`; a separately launched service needs the option in its own environment. See [Node.js system CA support](https://nodejs.org/api/cli.html#--use-system-ca). Certificate verification remains enabled.
+
+`19.19.19.19` is the address used in the tested setup, not a reserved example address; assigning it locally shadows access to that actual IP. Choose an address appropriate for your network and client policy, and change all three config fields together. The `ip address add` command lasts only until reboot: configure the address in your network manager before relying on automatic service startup. To undo the setup, remove hosts redirection and stop or reconfigure the proxy before running `sudo ip address del 19.19.19.19/32 dev lo`.
 
 ## Persistent deployment — optional
 

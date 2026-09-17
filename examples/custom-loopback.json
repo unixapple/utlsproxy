@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "listen": ["19.19.19.19:443"],
+  "domains": ["api.openai.com", "auth.openai.com", "chatgpt.com"],
+  "upstream": {"profile": "chrome-133", "alpn_mode": "compatible"},
+  "dns": {"mode": "auto"},
+  "hosts": {"address": "19.19.19.19"},
+  "access": {"client_cidrs": ["127.0.0.0/8", "19.19.19.19/32"]}
+}
